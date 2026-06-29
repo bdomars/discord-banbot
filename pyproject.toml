@@ -1,10 +1,10 @@
 [project]
 name = "banbot"
 version = "0.1.0"
-description = "Add your description here"
+description = "Discord bot for detecting and banning channel-hopping spam"
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
     "cachetools>=7.1.4",
-    "discord>=2.3.2",
+    "discord-py>=2.7.1",
 ]

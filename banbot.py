@@ -7,13 +7,22 @@ from cachetools import TTLCache
 
 TOKEN = os.environ["DISCORD_TOKEN"]
 LOG_CHANNEL_ID = os.environ.get("DISCORD_LOG_CHANNEL_ID")
-LOG_CHANNEL_NAME = "bot-actions"
+LOG_CHANNEL_NAME = os.environ.get("DISCORD_LOG_CHANNEL_NAME", "bot-actions")
 
 WINDOW_SECONDS = 15
 RETENTION_SECONDS = 2 * 60
 MAX_CHANNELS = 3
 
-DRY_RUN = True
+
+def env_bool(name: str, default: bool) -> bool:
+    value = os.environ.get(name)
+    if value is None:
+        return default
+
+    return value.strip().lower() not in {"0", "false", "no", "off"}
+
+
+DRY_RUN = env_bool("DISCORD_DRY_RUN", True)
 
 logger = logging.getLogger("banbot.main")
 

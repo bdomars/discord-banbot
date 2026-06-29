@@ -36,3 +36,21 @@ uv run python banbot.py
 ```
 
 Dry-run mode accepts `false`, `0`, `no`, or `off` to disable it; any other set value keeps it enabled.
+
+## Container
+
+Build and push the image to GitHub Container Registry:
+
+```bash
+podman build -t ghcr.io/bdomars/banbot:latest -f Containerfile .
+podman push ghcr.io/bdomars/banbot:latest
+```
+
+Run it locally:
+
+```bash
+podman run --rm \
+  -e DISCORD_TOKEN=your_bot_token \
+  -e DISCORD_DRY_RUN=true \
+  ghcr.io/bdomars/banbot:latest
+```

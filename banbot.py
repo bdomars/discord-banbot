@@ -124,13 +124,13 @@ async def handle_spam(message: discord.Message):
     try:
         await message.guild.ban(
             message.author,
-            reason=reason,
+            reason="Spam detected",
             delete_message_seconds=3600,
         )
     except TypeError:
         await message.guild.ban(
             message.author,
-            reason=reason,
+            reason="Spam detected",
             delete_message_days=1,
         )
     except discord.Forbidden:

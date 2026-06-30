@@ -92,13 +92,6 @@ def truncate(value: str, limit: int) -> str:
     return f"{value[:limit - 3]}..."
 
 
-def message_jump_url(guild_id: int, event: dict) -> str:
-    return (
-        f"https://discord.com/channels/{guild_id}/"
-        f"{event['channel_id']}/{event['message_id']}"
-    )
-
-
 def attachment_summary(message: discord.Message) -> list[dict[str, str]]:
     return [
         {
@@ -164,7 +157,6 @@ async def delete_recent_seen_messages(user_id: int):
 
 
 def format_event_field(
-    guild_id: int,
     event: dict,
     deletion_result: str,
     value_limit: int,
@@ -174,7 +166,6 @@ def format_event_field(
 
     content = event.get("content") or "[no text content]"
     lines = [
-        f"[Jump to message]({message_jump_url(guild_id, event)})",
         f"Created: {event.get('created_at', 'unknown')}",
         f"Content: {truncate(content, 700)}",
     ]
@@ -211,7 +202,7 @@ async def log_spam_evidence(message: discord.Message, reason: str, deletion_resu
 
     for index, event in enumerate(events):
         result = deletion_results.get(event["message_id"], "not processed")
-        name, value = format_event_field(message.guild.id, event, result, 700)
+        name, value = format_event_field(event, result, 700)
         remaining_chars = 5800 - used_chars - len(name)
 
         if remaining_chars < 120:

@@ -36,3 +36,28 @@ uv run python banbot.py
 ```
 
 Dry-run mode accepts `false`, `0`, `no`, or `off` to disable it; any other set value keeps it enabled.
+
+## Install on Kubernetes
+
+Create a Secret with the bot configuration:
+
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: banbot-config
+type: Opaque
+stringData:
+  DISCORD_TOKEN: your_bot_token
+  DISCORD_LOG_CHANNEL_NAME: bot-actions
+  DISCORD_DRY_RUN: "true"
+```
+
+Apply the Secret, then deploy the sample Kustomize configuration:
+
+```bash
+kubectl apply -f banbot-secret.yaml
+kubectl apply -k k8s
+```
+
+To log to a specific channel ID instead of a channel name, add `DISCORD_LOG_CHANNEL_ID` to the Secret.

@@ -57,7 +57,7 @@ Apply the Secret, then deploy the sample Kustomize configuration:
 
 ```bash
 kubectl apply -f banbot-secret.yaml
-kubectl apply -k k8s
+kubectl apply -k 'https://github.com/bdomars/discord-banbot//k8s?ref=main'
 ```
 
 To log to a specific channel ID instead of a channel name, add `DISCORD_LOG_CHANNEL_ID` to the Secret.

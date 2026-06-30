@@ -261,6 +261,11 @@ async def on_ready():
 
     logger.info("Logged in as %s", client.user)
     logger.info("Dry run: %s", DRY_RUN)
+    logger.info(
+        "Detection window: %s seconds; message count threshold: %s",
+        WINDOW_SECONDS,
+        MAX_CHANNELS,
+    )
 
     if log_channel is None:
         logger.warning("Could not find #%s", LOG_CHANNEL_NAME)

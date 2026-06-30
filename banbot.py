@@ -27,6 +27,7 @@ DRY_RUN = env_bool("DISCORD_DRY_RUN", True)
 logger = logging.getLogger("banbot.main")
 
 recent_user_posts = TTLCache(maxsize=50_000, ttl=RETENTION_SECONDS)
+active_spam_detections = TTLCache(maxsize=50_000, ttl=WINDOW_SECONDS)
 
 intents = discord.Intents.default()
 intents.guilds = True
@@ -284,7 +285,11 @@ async def on_message(message: discord.Message):
     if message.author.bot:
         return
 
+    if message.author.id in active_spam_detections:
+        return
+
     if await is_channel_hopping_spam(message):
+        active_spam_detections[message.author.id] = True
         await handle_spam(message)
 
 

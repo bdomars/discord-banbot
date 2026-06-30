@@ -12,7 +12,7 @@ FROM python:3.14-slim-bookworm
 
 LABEL org.opencontainers.image.title="banbot" \
       org.opencontainers.image.description="Discord bot for detecting and banning channel-hopping spam" \
-      org.opencontainers.image.source="https://github.com/bdomars/banbot" \
+      org.opencontainers.image.source="https://github.com/bdomars/discord-banbot" \
       org.opencontainers.image.url="https://ghcr.io/bdomars/banbot"
 
 WORKDIR /app

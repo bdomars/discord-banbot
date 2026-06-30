@@ -16,6 +16,10 @@ Set the required Discord token:
 export DISCORD_TOKEN=your_bot_token
 ```
 
+Enable the privileged **Message Content Intent** for the bot in the Discord
+Developer Portal. Banbot uses it to include the deleted spam messages in the
+admin log when a user is detected.
+
 Optionally set the log channel by ID. If omitted, the bot looks for a channel named `bot-actions`, or the name from `DISCORD_LOG_CHANNEL_NAME`:
 
 ```bash

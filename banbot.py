@@ -267,6 +267,11 @@ async def on_ready():
 
 
 @client.event
+async def on_guild_join(guild: discord.Guild):
+    logger.info("Added to server: %s (%s)", guild.name, guild.id)
+
+
+@client.event
 async def on_message(message: discord.Message):
     if message.guild is None:
         return

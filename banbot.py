@@ -348,8 +348,8 @@ async def handle_spam(message: discord.Message, incident: ActiveIncident):
     )
 
     if not incident.reported:
-        await log_spam_evidence(message, reason, deletion_results)
         incident.reported = True
+        await log_spam_evidence(message, reason, deletion_results)
 
     if incident.ban_attempted:
         return
@@ -409,6 +409,7 @@ async def on_message(message: discord.Message):
             return
 
         incident = ActiveIncident()
+        active_incidents[key] = incident
 
     await handle_spam(message, incident)
     active_incidents[key] = incident

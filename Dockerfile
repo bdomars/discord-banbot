@@ -10,14 +10,18 @@ RUN uv sync --frozen --no-dev --no-install-project
 
 FROM python:3.14-slim-bookworm
 
+ARG GIT_REV=unknown
+
 LABEL org.opencontainers.image.title="banbot" \
       org.opencontainers.image.description="Discord bot for detecting and banning channel-hopping spam" \
+      org.opencontainers.image.revision="${GIT_REV}" \
       org.opencontainers.image.source="https://github.com/bdomars/discord-banbot" \
       org.opencontainers.image.url="https://ghcr.io/bdomars/banbot"
 
 WORKDIR /app
 
 ENV PATH="/app/.venv/bin:$PATH" \
+    BANBOT_GIT_REV="${GIT_REV}" \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
 

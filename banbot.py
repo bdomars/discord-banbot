@@ -9,6 +9,7 @@ from cachetools import TTLCache
 
 TOKEN = os.environ["DISCORD_TOKEN"]
 LOG_CHANNEL_NAME = os.environ.get("DISCORD_LOG_CHANNEL_NAME", "bot-actions")
+GIT_REV = os.environ.get("BANBOT_GIT_REV", "unknown")
 
 WINDOW_SECONDS = 8
 RETENTION_SECONDS = 2 * 60
@@ -372,6 +373,7 @@ async def handle_spam(message: discord.Message, incident: ActiveIncident):
 @client.event
 async def on_ready():
     logger.info("Logged in as %s", client.user)
+    logger.info("Git revision: %s", GIT_REV)
     logger.info("Dry run: %s", DRY_RUN)
     logger.info(
         "Detection window: %s seconds; message count threshold: %s",

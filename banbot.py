@@ -1,6 +1,7 @@
 import logging
 import os
 import time
+from dataclasses import dataclass, field
 from typing import TypedDict
 
 import discord
@@ -44,7 +45,18 @@ class RecentPostEvent(TypedDict):
     attachments: list[AttachmentSummary]
 
 
+@dataclass
+class ActiveIncident:
+    reported: bool = False
+    ban_attempted: bool = False
+    deleted_message_ids: set[int] = field(default_factory=set)
+
+
 recent_user_posts: TTLCache[tuple[int, int], list[RecentPostEvent]] = TTLCache(
+    maxsize=50_000,
+    ttl=RETENTION_SECONDS,
+)
+active_incidents: TTLCache[tuple[int, int], ActiveIncident] = TTLCache(
     maxsize=50_000,
     ttl=RETENTION_SECONDS,
 )
@@ -153,31 +165,45 @@ async def is_channel_hopping_spam(message: discord.Message) -> bool:
     return len(unique_channels) > MAX_CHANNELS
 
 
-async def delete_recent_seen_messages(guild: discord.Guild, user_id: int):
+async def delete_recent_seen_messages(
+    guild: discord.Guild,
+    user_id: int,
+    incident: ActiveIncident,
+) -> dict[int, str]:
     events = recent_user_posts.get(guild_user_key(guild.id, user_id), [])
-    results = {}
+    results: dict[int, str] = {}
 
     for event in events:
+        message_id = event["message_id"]
+
+        if message_id in incident.deleted_message_ids:
+            results[message_id] = "already processed"
+            continue
+
         channel = guild.get_channel_or_thread(event["channel_id"])
         if channel is None:
-            results[event["message_id"]] = "channel not found"
+            results[message_id] = "channel not found"
+            incident.deleted_message_ids.add(message_id)
             continue
 
         if not isinstance(channel, (discord.TextChannel, discord.Thread)):
-            results[event["message_id"]] = "not a message channel"
+            results[message_id] = "not a message channel"
+            incident.deleted_message_ids.add(message_id)
             continue
 
         try:
-            msg = await channel.fetch_message(event["message_id"])
+            msg = await channel.fetch_message(message_id)
             await msg.delete()
-            results[event["message_id"]] = "deleted"
+            results[message_id] = "deleted"
+            incident.deleted_message_ids.add(message_id)
         except discord.NotFound:
-            results[event["message_id"]] = "already gone"
+            results[message_id] = "already gone"
+            incident.deleted_message_ids.add(message_id)
         except discord.Forbidden:
-            results[event["message_id"]] = "missing permission"
+            results[message_id] = "missing permission"
             logger.warning("Missing permission to delete message")
         except discord.HTTPException as exc:
-            results[event["message_id"]] = f"failed: {exc}"
+            results[message_id] = f"failed: {exc}"
             logger.warning("Failed to delete message: %s", exc)
 
     return results
@@ -210,7 +236,11 @@ def format_event_field(
     return name, truncate("\n".join(lines), value_limit)
 
 
-async def log_spam_evidence(message: discord.Message, reason: str, deletion_results: dict):
+async def log_spam_evidence(
+    message: discord.Message,
+    reason: str,
+    deletion_results: dict[int, str],
+):
     events = recent_user_posts.get(
         guild_user_key(message.guild.id, message.author.id),
         [],
@@ -252,7 +282,7 @@ async def log_spam_evidence(message: discord.Message, reason: str, deletion_resu
     await send_log_embed(message.guild, embed)
 
 
-async def handle_spam(message: discord.Message):
+async def handle_spam(message: discord.Message, incident: ActiveIncident):
     reason = (
         f"Posted in more than {MAX_CHANNELS} channels "
         f"within {WINDOW_SECONDS} seconds"
@@ -268,8 +298,17 @@ async def handle_spam(message: discord.Message):
     deletion_results = await delete_recent_seen_messages(
         message.guild,
         message.author.id,
+        incident,
     )
-    await log_spam_evidence(message, reason, deletion_results)
+
+    if not incident.reported:
+        await log_spam_evidence(message, reason, deletion_results)
+        incident.reported = True
+
+    if incident.ban_attempted:
+        return
+
+    incident.ban_attempted = True
 
     if DRY_RUN:
         await log(message.guild, "[DRY_RUN] Dry run, would ban user here")
@@ -328,8 +367,18 @@ async def on_message(message: discord.Message):
     if message.author.bot:
         return
 
-    if await is_channel_hopping_spam(message):
-        await handle_spam(message)
+    key = guild_user_key(message.guild.id, message.author.id)
+    is_spam = await is_channel_hopping_spam(message)
+    incident = active_incidents.get(key)
+
+    if incident is None:
+        if not is_spam:
+            return
+
+        incident = ActiveIncident()
+
+    await handle_spam(message, incident)
+    active_incidents[key] = incident
 
 
 client.run(TOKEN, root_logger=True)

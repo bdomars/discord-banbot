@@ -186,7 +186,15 @@ async def delete_recent_seen_messages(
             incident.deleted_message_ids.add(message_id)
             continue
 
-        if not isinstance(channel, (discord.TextChannel, discord.Thread)):
+        if not isinstance(
+            channel,
+            (
+                discord.TextChannel,
+                discord.Thread,
+                discord.VoiceChannel,
+                discord.StageChannel,
+            ),
+        ):
             results[message_id] = "not a message channel"
             incident.deleted_message_ids.add(message_id)
             continue

@@ -111,11 +111,49 @@ async def send_log_embed(guild: discord.Guild, embed: discord.Embed):
         logger.warning("Failed to post log embed: %s", exc)
 
 
-def find_log_channel(guild: discord.Guild):
+def find_log_channel(guild: discord.Guild) -> discord.TextChannel | None:
     return discord.utils.get(
         guild.text_channels,
         name=LOG_CHANNEL_NAME,
     )
+
+
+def check_guild_setup(guild: discord.Guild) -> None:
+    bot_member = guild.me
+    missing_permissions = []
+    has_setup_warning = False
+
+    if not bot_member.guild_permissions.manage_messages:
+        missing_permissions.append("Manage Messages")
+
+    if not bot_member.guild_permissions.ban_members:
+        missing_permissions.append("Ban Members")
+
+    log_channel = find_log_channel(guild)
+    if log_channel is None:
+        has_setup_warning = True
+        logger.warning(
+            "Could not find #%s in %s (%s)",
+            LOG_CHANNEL_NAME,
+            guild.name,
+            guild.id,
+        )
+    elif not log_channel.permissions_for(bot_member).send_messages:
+        missing_permissions.append(f"Send Messages in #{LOG_CHANNEL_NAME}")
+
+    if missing_permissions:
+        logger.warning(
+            "Missing permissions in %s (%s): %s",
+            guild.name,
+            guild.id,
+            ", ".join(missing_permissions),
+        )
+    elif not has_setup_warning:
+        logger.info(
+            "Required permissions are present in %s (%s)",
+            guild.name,
+            guild.id,
+        )
 
 
 def truncate(value: str, limit: int) -> str:
@@ -345,26 +383,13 @@ async def on_ready():
     )
 
     for guild in client.guilds:
-        if find_log_channel(guild) is None:
-            logger.warning(
-                "Could not find #%s in %s (%s)",
-                LOG_CHANNEL_NAME,
-                guild.name,
-                guild.id,
-            )
+        check_guild_setup(guild)
 
 
 @client.event
 async def on_guild_join(guild: discord.Guild):
     logger.info("Added to server: %s (%s)", guild.name, guild.id)
-
-    if find_log_channel(guild) is None:
-        logger.warning(
-            "Could not find #%s in %s (%s)",
-            LOG_CHANNEL_NAME,
-            guild.name,
-            guild.id,
-        )
+    check_guild_setup(guild)
 
 
 @client.event

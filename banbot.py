@@ -257,11 +257,10 @@ async def delete_recent_seen_messages(
 
 def format_event_field(
     event: RecentPostEvent,
-    deletion_result: str,
     value_limit: int,
 ) -> tuple[str, str]:
     channel_name = event["channel_name"] or str(event["channel_id"])
-    name = truncate(f"#{channel_name} - {deletion_result}", 256)
+    name = truncate(f"#{channel_name}", 256)
 
     content = event.get("content") or "[no text content]"
     lines = [
@@ -285,7 +284,6 @@ def format_event_field(
 async def log_spam_evidence(
     message: discord.Message,
     reason: str,
-    deletion_results: dict[int, str],
 ):
     events = recent_user_posts.get(
         guild_user_key(message.guild.id, message.author.id),
@@ -308,8 +306,7 @@ async def log_spam_evidence(
     omitted_count = 0
 
     for index, event in enumerate(events):
-        result = deletion_results.get(event["message_id"], "not processed")
-        name, value = format_event_field(event, result, 700)
+        name, value = format_event_field(event, 700)
         remaining_chars = 5800 - used_chars - len(name)
 
         if remaining_chars < 120:
@@ -341,7 +338,7 @@ async def handle_spam(message: discord.Message, incident: ActiveIncident):
         reason,
     )
 
-    deletion_results = await delete_recent_seen_messages(
+    await delete_recent_seen_messages(
         message.guild,
         message.author.id,
         incident,
@@ -349,7 +346,7 @@ async def handle_spam(message: discord.Message, incident: ActiveIncident):
 
     if not incident.reported:
         incident.reported = True
-        await log_spam_evidence(message, reason, deletion_results)
+        await log_spam_evidence(message, reason)
 
     if incident.ban_attempted:
         return

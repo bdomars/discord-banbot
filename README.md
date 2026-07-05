@@ -20,10 +20,10 @@ Enable the privileged **Message Content Intent** for the bot in the Discord
 Developer Portal. Banbot uses it to include the deleted spam messages in the
 admin log when a user is detected.
 
-Optionally set the log channel by ID. If omitted, the bot looks for a channel named `bot-actions`, or the name from `DISCORD_LOG_CHANNEL_NAME`:
+Banbot logs actions to a channel named `bot-actions` in each Discord server.
+You can change the expected channel name:
 
 ```bash
-export DISCORD_LOG_CHANNEL_ID=123456789012345678
 export DISCORD_LOG_CHANNEL_NAME=bot-actions
 ```
 
@@ -64,4 +64,5 @@ kubectl apply -f banbot-secret.yaml
 kubectl apply -k 'https://github.com/bdomars/discord-banbot//k8s?ref=main'
 ```
 
-To log to a specific channel ID instead of a channel name, add `DISCORD_LOG_CHANNEL_ID` to the Secret.
+Create a channel with the configured `DISCORD_LOG_CHANNEL_NAME` in each server
+where Banbot should post admin logs.

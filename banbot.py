@@ -1,12 +1,12 @@
 import logging
 import os
 import time
+from typing import TypedDict
 
 import discord
 from cachetools import TTLCache
 
 TOKEN = os.environ["DISCORD_TOKEN"]
-LOG_CHANNEL_ID = os.environ.get("DISCORD_LOG_CHANNEL_ID")
 LOG_CHANNEL_NAME = os.environ.get("DISCORD_LOG_CHANNEL_NAME", "bot-actions")
 
 WINDOW_SECONDS = 8
@@ -26,7 +26,28 @@ DRY_RUN = env_bool("DISCORD_DRY_RUN", True)
 
 logger = logging.getLogger("banbot.main")
 
-recent_user_posts = TTLCache(maxsize=50_000, ttl=RETENTION_SECONDS)
+
+class AttachmentSummary(TypedDict):
+    filename: str
+    url: str
+
+
+class RecentPostEvent(TypedDict):
+    timestamp: float
+    created_at: str
+    guild_id: int
+    guild_name: str
+    channel_id: int
+    channel_name: str
+    message_id: int
+    content: str
+    attachments: list[AttachmentSummary]
+
+
+recent_user_posts: TTLCache[tuple[int, int], list[RecentPostEvent]] = TTLCache(
+    maxsize=50_000,
+    ttl=RETENTION_SECONDS,
+)
 
 intents = discord.Intents.default()
 intents.guilds = True
@@ -34,15 +55,20 @@ intents.messages = True
 intents.message_content = True
 
 client = discord.Client(intents=intents)
-log_channel = None
 
 
 def user_profile_link(user: discord.abc.User) -> str:
     return f"<@{user.id}>"
 
 
-async def log(message: str):
-    logger.info(message)
+def guild_user_key(guild_id: int, user_id: int) -> tuple[int, int]:
+    return guild_id, user_id
+
+
+async def log(guild: discord.Guild, message: str):
+    logger.info("[%s:%s] %s", guild.name, guild.id, message)
+
+    log_channel = find_log_channel(guild)
 
     if log_channel is None:
         return
@@ -56,8 +82,10 @@ async def log(message: str):
         logger.warning("Failed to post log message: %s", exc)
 
 
-async def send_log_embed(embed: discord.Embed):
-    logger.info("%s", embed.title)
+async def send_log_embed(guild: discord.Guild, embed: discord.Embed):
+    logger.info("[%s:%s] %s", guild.name, guild.id, embed.title)
+
+    log_channel = find_log_channel(guild)
 
     if log_channel is None:
         return
@@ -71,16 +99,9 @@ async def send_log_embed(embed: discord.Embed):
         logger.warning("Failed to post log embed: %s", exc)
 
 
-def find_log_channel():
-    if LOG_CHANNEL_ID is not None:
-        try:
-            return client.get_channel(int(LOG_CHANNEL_ID))
-        except ValueError:
-            logger.warning("DISCORD_LOG_CHANNEL_ID must be a numeric channel ID")
-            return None
-
+def find_log_channel(guild: discord.Guild):
     return discord.utils.get(
-        client.get_all_channels(),
+        guild.text_channels,
         name=LOG_CHANNEL_NAME,
     )
 
@@ -92,7 +113,7 @@ def truncate(value: str, limit: int) -> str:
     return f"{value[:limit - 3]}..."
 
 
-def attachment_summary(message: discord.Message) -> list[dict[str, str]]:
+def attachment_summary(message: discord.Message) -> list[AttachmentSummary]:
     return [
         {
             "filename": attachment.filename,
@@ -104,9 +125,9 @@ def attachment_summary(message: discord.Message) -> list[dict[str, str]]:
 
 async def is_channel_hopping_spam(message: discord.Message) -> bool:
     now = time.monotonic()
-    user_id = message.author.id
+    key = guild_user_key(message.guild.id, message.author.id)
 
-    events = recent_user_posts.get(user_id, [])
+    events = recent_user_posts.get(key, [])
 
     events = [
         event for event in events
@@ -116,6 +137,8 @@ async def is_channel_hopping_spam(message: discord.Message) -> bool:
     events.append({
         "timestamp": now,
         "created_at": message.created_at.isoformat(),
+        "guild_id": message.guild.id,
+        "guild_name": message.guild.name,
         "channel_id": message.channel.id,
         "channel_name": getattr(message.channel, "name", str(message.channel.id)),
         "message_id": message.id,
@@ -123,21 +146,25 @@ async def is_channel_hopping_spam(message: discord.Message) -> bool:
         "attachments": attachment_summary(message),
     })
 
-    recent_user_posts[user_id] = events
+    recent_user_posts[key] = events
 
     unique_channels = {event["channel_id"] for event in events}
 
     return len(unique_channels) > MAX_CHANNELS
 
 
-async def delete_recent_seen_messages(user_id: int):
-    events = recent_user_posts.get(user_id, [])
+async def delete_recent_seen_messages(guild: discord.Guild, user_id: int):
+    events = recent_user_posts.get(guild_user_key(guild.id, user_id), [])
     results = {}
 
     for event in events:
-        channel = client.get_channel(event["channel_id"])
+        channel = guild.get_channel_or_thread(event["channel_id"])
         if channel is None:
             results[event["message_id"]] = "channel not found"
+            continue
+
+        if not isinstance(channel, (discord.TextChannel, discord.Thread)):
+            results[event["message_id"]] = "not a message channel"
             continue
 
         try:
@@ -157,16 +184,16 @@ async def delete_recent_seen_messages(user_id: int):
 
 
 def format_event_field(
-    event: dict,
+    event: RecentPostEvent,
     deletion_result: str,
     value_limit: int,
 ) -> tuple[str, str]:
-    channel_name = event.get("channel_name") or str(event["channel_id"])
+    channel_name = event["channel_name"] or str(event["channel_id"])
     name = truncate(f"#{channel_name} - {deletion_result}", 256)
 
     content = event.get("content") or "[no text content]"
     lines = [
-        f"Created: {event.get('created_at', 'unknown')}",
+        f"Created: {event['created_at']}",
         f"Content: {truncate(content, 700)}",
     ]
 
@@ -184,9 +211,13 @@ def format_event_field(
 
 
 async def log_spam_evidence(message: discord.Message, reason: str, deletion_results: dict):
-    events = recent_user_posts.get(message.author.id, [])
+    events = recent_user_posts.get(
+        guild_user_key(message.guild.id, message.author.id),
+        [],
+    )
     description = (
         f"{user_profile_link(message.author)} ({message.author.id})\n"
+        f"Guild: {message.guild.name} ({message.guild.id})\n"
         f"{reason}\n"
         f"Dry run: {DRY_RUN}"
     )
@@ -197,7 +228,7 @@ async def log_spam_evidence(message: discord.Message, reason: str, deletion_resu
         color=discord.Color.red(),
     )
 
-    used_chars = len(embed.title) + len(description)
+    used_chars = len("Spam detected") + len(description)
     omitted_count = 0
 
     for index, event in enumerate(events):
@@ -218,7 +249,7 @@ async def log_spam_evidence(message: discord.Message, reason: str, deletion_resu
     if omitted_count:
         embed.set_footer(text=f"{omitted_count} additional recent messages omitted")
 
-    await send_log_embed(embed)
+    await send_log_embed(message.guild, embed)
 
 
 async def handle_spam(message: discord.Message):
@@ -234,11 +265,14 @@ async def handle_spam(message: discord.Message):
         reason,
     )
 
-    deletion_results = await delete_recent_seen_messages(message.author.id)
+    deletion_results = await delete_recent_seen_messages(
+        message.guild,
+        message.author.id,
+    )
     await log_spam_evidence(message, reason, deletion_results)
 
     if DRY_RUN:
-        await log("[DRY_RUN] Dry run, would ban user here")
+        await log(message.guild, "[DRY_RUN] Dry run, would ban user here")
         return
 
     try:
@@ -248,17 +282,13 @@ async def handle_spam(message: discord.Message):
             delete_message_seconds=3600,
         )
     except discord.Forbidden:
-        await log("Missing permission to ban user")
+        await log(message.guild, "Missing permission to ban user")
     except discord.HTTPException as exc:
-        await log(f"Failed to ban user: {exc}")
+        await log(message.guild, f"Failed to ban user: {exc}")
 
 
 @client.event
 async def on_ready():
-    global log_channel
-
-    log_channel = find_log_channel()
-
     logger.info("Logged in as %s", client.user)
     logger.info("Dry run: %s", DRY_RUN)
     logger.info(
@@ -267,13 +297,27 @@ async def on_ready():
         MAX_CHANNELS,
     )
 
-    if log_channel is None:
-        logger.warning("Could not find #%s", LOG_CHANNEL_NAME)
+    for guild in client.guilds:
+        if find_log_channel(guild) is None:
+            logger.warning(
+                "Could not find #%s in %s (%s)",
+                LOG_CHANNEL_NAME,
+                guild.name,
+                guild.id,
+            )
 
 
 @client.event
 async def on_guild_join(guild: discord.Guild):
     logger.info("Added to server: %s (%s)", guild.name, guild.id)
+
+    if find_log_channel(guild) is None:
+        logger.warning(
+            "Could not find #%s in %s (%s)",
+            LOG_CHANNEL_NAME,
+            guild.name,
+            guild.id,
+        )
 
 
 @client.event

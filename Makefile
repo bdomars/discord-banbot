@@ -1,5 +1,5 @@
 IMAGE ?= ghcr.io/bdomars/banbot:latest
-GIT_REV ?= $(shell git rev-parse --short 6 HEAD)
+GIT_REV ?= $(shell git rev-parse --short=6 HEAD)
 
 .PHONY: run build push image
 

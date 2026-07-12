@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 import time
@@ -14,6 +15,7 @@ GIT_REV = os.environ.get("BANBOT_GIT_REV", "unknown")
 WINDOW_SECONDS = 8
 RETENTION_SECONDS = 2 * 60
 MAX_CHANNELS = 3
+INCIDENT_CLEANUP_INTERVAL_SECONDS = 5
 
 
 def env_bool(name: str, default: bool) -> bool:
@@ -48,6 +50,12 @@ class RecentPostEvent(TypedDict):
 
 @dataclass
 class ActiveIncident:
+    started_at: float
+    last_seen_at: float
+    guild_id: int
+    guild_name: str
+    user_id: int
+    user_name: str
     reported: bool = False
     ban_attempted: bool = False
     deleted_message_ids: set[int] = field(default_factory=set)
@@ -57,10 +65,8 @@ recent_user_posts: TTLCache[tuple[int, int], list[RecentPostEvent]] = TTLCache(
     maxsize=50_000,
     ttl=RETENTION_SECONDS,
 )
-active_incidents: TTLCache[tuple[int, int], ActiveIncident] = TTLCache(
-    maxsize=50_000,
-    ttl=RETENTION_SECONDS,
-)
+active_incidents: dict[tuple[int, int], ActiveIncident] = {}
+incident_cleanup_task: asyncio.Task[None] | None = None
 
 intents = discord.Intents.default()
 intents.guilds = True
@@ -76,6 +82,79 @@ def user_profile_link(user: discord.abc.User) -> str:
 
 def guild_user_key(guild_id: int, user_id: int) -> tuple[int, int]:
     return guild_id, user_id
+
+
+def touch_incident(incident: ActiveIncident, message: discord.Message) -> None:
+    incident.last_seen_at = time.monotonic()
+    incident.guild_id = message.guild.id
+    incident.guild_name = message.guild.name
+    incident.user_id = message.author.id
+    incident.user_name = str(message.author)
+
+
+def start_incident(message: discord.Message) -> ActiveIncident:
+    now = time.monotonic()
+    incident = ActiveIncident(
+        started_at=now,
+        last_seen_at=now,
+        guild_id=message.guild.id,
+        guild_name=message.guild.name,
+        user_id=message.author.id,
+        user_name=str(message.author),
+    )
+
+    active_incidents[guild_user_key(message.guild.id, message.author.id)] = incident
+
+    logger.info(
+        "Incident started: guild=%s (%s) user=%s (%s)",
+        incident.guild_name,
+        incident.guild_id,
+        incident.user_name,
+        incident.user_id,
+    )
+
+    return incident
+
+
+def end_inactive_incidents() -> None:
+    now = time.monotonic()
+
+    for key, incident in list(active_incidents.items()):
+        quiet_seconds = now - incident.last_seen_at
+
+        if quiet_seconds < RETENTION_SECONDS:
+            continue
+
+        duration_seconds = now - incident.started_at
+        logger.info(
+            "Incident ended: guild=%s (%s) user=%s (%s) duration=%.0fs quiet=%.0fs",
+            incident.guild_name,
+            incident.guild_id,
+            incident.user_name,
+            incident.user_id,
+            duration_seconds,
+            quiet_seconds,
+        )
+        del active_incidents[key]
+
+
+async def incident_cleanup_loop() -> None:
+    while True:
+        try:
+            end_inactive_incidents()
+        except Exception:
+            logger.exception("Incident cleanup failed")
+
+        await asyncio.sleep(INCIDENT_CLEANUP_INTERVAL_SECONDS)
+
+
+def ensure_incident_cleanup_task() -> None:
+    global incident_cleanup_task
+
+    if incident_cleanup_task is not None and not incident_cleanup_task.done():
+        return
+
+    incident_cleanup_task = asyncio.create_task(incident_cleanup_loop())
 
 
 async def log(guild: discord.Guild, message: str):
@@ -380,6 +459,7 @@ async def on_ready():
         WINDOW_SECONDS,
         MAX_CHANNELS,
     )
+    ensure_incident_cleanup_task()
 
     for guild in client.guilds:
         check_guild_setup(guild)
@@ -407,8 +487,9 @@ async def on_message(message: discord.Message):
         if not is_spam:
             return
 
-        incident = ActiveIncident()
-        active_incidents[key] = incident
+        incident = start_incident(message)
+    else:
+        touch_incident(incident, message)
 
     await handle_spam(message, incident)
     active_incidents[key] = incident

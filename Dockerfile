@@ -33,4 +33,6 @@ COPY banbot ./banbot
 
 USER 10001:10001
 
+EXPOSE 8080
+
 ENTRYPOINT ["python", "-m", "banbot.main"]

@@ -5,6 +5,7 @@ description = "Discord bot for detecting and banning channel-hopping spam"
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
+    "aiohttp>=3.14.1",
     "cachetools>=7.1.4",
     "discord-py>=2.7.1",
 ]

@@ -36,7 +36,7 @@ export DISCORD_DRY_RUN=false
 Run the bot:
 
 ```bash
-uv run banbot.py
+uv run python -m banbot.main
 ```
 
 Dry-run mode accepts `false`, `0`, `no`, or `off` to disable it; any other set value keeps it enabled.

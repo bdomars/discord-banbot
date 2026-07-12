@@ -29,7 +29,8 @@ RUN useradd --create-home --uid 10001 --shell /usr/sbin/nologin banbot
 
 COPY --from=builder /app/.venv /app/.venv
 COPY banbot.py ./
+COPY banbot ./banbot
 
 USER 10001:10001
 
-ENTRYPOINT ["python", "banbot.py"]
+ENTRYPOINT ["python", "-m", "banbot.main"]
